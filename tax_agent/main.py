@@ -447,24 +447,3 @@ def get_po_resource(doc_id: str) -> str:
   # exposes an HTTP endpoint instead of stdio
 
 
-if __name__ == "__main__":
-        """
-        Safe startup helper for environments that already run an asyncio event loop
-        (for example some hosting or orchestration runtimes). Instead of calling
-        an asyncio-based entrypoint in-process (which can raise
-        "Already running asyncio in this thread"), we spawn the MCP CLI in a
-        subprocess so it runs in its own process and its own event loop.
-
-        This is a simple, conservative workaround that keeps `mcp`'s usual CLI
-        behavior while avoiding nested event loops during deployments.
-        """
-        import subprocess
-        import sys
-        from pathlib import Path
-
-        # Use the current Python executable and run the MCP CLI against this file.
-        # Using a subprocess isolates the event loop from the host environment.
-        cmd = [sys.executable, "-m", "mcp", "run", str(Path(__file__).resolve())]
-        print("Starting MCP server via subprocess to avoid nested asyncio loop:", " ".join(cmd))
-        # Propagate the subprocess exit code
-        raise SystemExit(subprocess.call(cmd))
