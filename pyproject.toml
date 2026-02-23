@@ -1,7 +1,10 @@
 [project]
-name = "tax-agent"
+name = "mcpserver"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "mcp[cli]>=1.21.0",
+    "requests",
+]
