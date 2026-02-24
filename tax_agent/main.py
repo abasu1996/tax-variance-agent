@@ -410,7 +410,7 @@ def explain_differences(invoice_id: str, po_id: str) -> str:
                     lines.append(f"    {field}: Invoice={vals['invoice']}  PO={vals['po']}")
             lines.append("")
 
-    return "\n".join(lines)
+    return "\n".join(lines) 
 
 
 @mcp.tool()
