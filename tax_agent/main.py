@@ -16,8 +16,9 @@ import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
-
+from fastapi import FastAPI
 from mcp.server.fastmcp import FastMCP
+import mcp
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FastMCP app — this is what `mcp run server.py` looks for
@@ -30,7 +31,8 @@ mcp = FastMCP(
         "Use load_invoice and load_po first, then compare_tax or explain_differences."
     ),
 )
-
+app = FastAPI()
+app.mount("/", mcp.streamable_http_app())
 # ─────────────────────────────────────────────────────────────────────────────
 # In-memory document store
 # ─────────────────────────────────────────────────────────────────────────────
@@ -446,5 +448,4 @@ def get_po_resource(doc_id: str) -> str:
 
   # exposes an HTTP endpoint instead of stdio
 
-if __name__ == "__main__":
-    mcp.run(transport="http", host="0.0.0.0", port=8000)
+
