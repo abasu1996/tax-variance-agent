@@ -446,4 +446,5 @@ def get_po_resource(doc_id: str) -> str:
 
   # exposes an HTTP endpoint instead of stdio
 
-
+if __name__ == "__main__":
+    mcp.run(transport="http", host="0.0.0.0", port=8000)
