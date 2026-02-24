@@ -391,6 +391,7 @@ def explain_differences(invoice_id: str, po_id: str) -> str:
     else:
         lines.append(f"⚠️   {len(result['summary_differences'])} DIFFERENCE(S) FOUND")
         lines.append("")
+        print("Yes it is appended")
         for i, diff in enumerate(result["summary_differences"], 1):
             lines += [
                 f"Difference #{i}: {diff['field'].upper().replace('_', ' ')}",
