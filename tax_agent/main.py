@@ -17,8 +17,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 from fastapi import FastAPI
-from mcp.server.fastmcp import FastMCP
-import mcp
+from fastmcp import FastMCP
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FastMCP app — this is what `mcp run server.py` looks for

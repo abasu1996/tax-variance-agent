@@ -9,4 +9,5 @@ dependencies = [
     "mcp[cli]>=1.21.0",
     "requests",
     "uvicorn",
+    "fastmcp==2.12.3"
 ]
