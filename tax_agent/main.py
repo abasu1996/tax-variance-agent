@@ -92,7 +92,7 @@ def _headers():
 
 def _date_filter(start, end):
     return (
-        f"and startDate eq '{start}' "
+        f"$filter=startDate eq '{start}' "
         f"and endDate eq '{end}'"
     )
 
