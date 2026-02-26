@@ -13,6 +13,7 @@ Or install into Claude Desktop automatically:
 """
 
 import json
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
@@ -33,37 +34,59 @@ mcp = FastMCP(
 )
 app = FastAPI()
 app.mount("/", mcp.streamable_http_app())
-# ─────────────────────────────────────────────────────────────────────────────
-# In-memory document store
-# ─────────────────────────────────────────────────────────────────────────────
+_token_cache = {"access_token": None, "expires_at": 0}
 _store: dict[str, dict] = {"invoices": {}, "purchase_orders": {}}
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PARSING HELPERS
-# ══════════════════════════════════════════════════════════════════════════════
+ARIBA_BASE_URL = "https://api.ariba.com"
+ARIBA_TXN_BASE_URL = "https://openapi.ariba.com/api"
+REALM = "BrainBoxDSAPP-T"
+CLIENT_ID = "b877ec00-9b85-485c-b04e-32d987e61e4f"
+CLIENT_SECRET = "5S5onRWM8rhmK54VthMeJjKp2E82zzfG"
+X_ARIBA_NETWORK_ID = "AN01469767274-T"
+ARIBA_API_KEY = "eXEQpCAMDgbrwyZp0NEet7aLgG8LWhnh"
 
 def _parse_json(path: str) -> dict:
     with open(path, "r") as f:
         return json.load(f)
 
 
+def _get_access_token()-> str:
+    if _token_cache["access_token"] and time.time() < _token_cache["expires_at"]:
+        return _token_cache["access_token"]
+    
+    url = f"{ARIBA_BASE_URL}/v2/oauth/token"
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": f"Basic {CLIENT_ID}:{CLIENT_SECRET}"
+    }
+    data = {
+        "grant_type": "client_credentials",
+        "realm": REALM
+    }
+    response = httpx.post(url, headers=headers, data=data)
+    if response.status_code == 200:
+        token_data = response.json()
+        _token_cache["access_token"] = token_data["access_token"]
+        _token_cache["expires_at"] = time.time() + token_data["expires_in"]
+        return _token_cache["access_token"]
+    raise ValueError("Failed to retrieve access token")
 
-
-def _fetch_po_from_api(po_id: str) -> dict:
+def _fetch_po_from_api() -> dict:
     """
     Fetch PO data from external API and return parsed JSON.
     Adjust URL, headers, and auth as needed.
     """
-    BASE_URL = "https://api.example.com/purchase-orders"
-
+    
+    _DATEFILTER = f"$filter=startDate eq '2024-08-01T00:00:00' and endDate eq '2024-08-31T00:00:00'"
     headers = {
-        "Authorization": "Bearer YOUR_ACCESS_TOKEN",
-        "Accept": "application/json"
+        "Authorization": f"Bearer {_get_access_token()}",
+        "Accept": "application/json",
+        "apiKey": ARIBA_API_KEY,
+        "X-ARIBA-NETWORK-ID": X_ARIBA_NETWORK_ID
     }
 
-    url = f"{BASE_URL}/{po_id}"
-
+    url = f"{ARIBA_TXN_BASE_URL}/purchase-orders/v1/prod/orders?{_DATEFILTER}"
     response = httpx.get(url, headers=headers, timeout=30)
 
     if response.status_code != 200:
