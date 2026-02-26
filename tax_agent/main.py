@@ -356,7 +356,7 @@ def load_po_from_api(po_id: str, document_id: str = "") -> str:
     """
     doc_id = document_id or po_id
 
-    po_data = _fetch_po_from_api(po_id)
+    po_data = _fetch_po_from_api()
 
     _store["purchase_orders"][doc_id] = po_data
 
