@@ -95,7 +95,7 @@ def _fetch_po_from_api() -> dict:
         )
 
     # If API returns JSON
-    return response.json()
+    return response.json()["content"]
 
     # If API returns XML:
     # return _xml_to_dict(ET.fromstring(response.text))
@@ -346,24 +346,21 @@ def _compare_taxes(invoice_tax: dict, po_tax: dict) -> dict:
 # MCP TOOLS  (registered via @mcp.tool decorator)
 # ══════════════════════════════════════════════════════════════════════════════
 @mcp.tool()
-def load_po_from_api(po_id: str, document_id: str = "") -> str:
+def load_po_from_api() -> str:
     """
-    Fetch a Purchase Order from an external API and load it into the document store.
+    Fetch Purchase Orders from an external Ariba Buyer network Purchase Order API and load it into the document store.
+    
+    """
 
-    Args:
-        po_id:       Purchase Order ID in the remote system.
-        document_id: Optional ID to store locally. Defaults to po_id.
-    """
-    doc_id = document_id or po_id
 
     po_data = _fetch_po_from_api()
 
-    _store["purchase_orders"][doc_id] = po_data
+    _store["purchase_orders"] = po_data
 
     return json.dumps({
         "status": "ok",
-        "message": f"PO '{doc_id}' fetched from API and loaded successfully.",
-        "doc_id": doc_id
+        "message": f"POs fetched from API and loaded successfully.",
+        "doc_count": len(po_data)
     })
 @mcp.tool()
 def load_invoice(file_path: str, document_id: str = "") -> str:
