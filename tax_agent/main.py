@@ -2,23 +2,20 @@
 Invoice vs PO Tax Analyzer — MCP Server (Ariba Integrated)
 
 Run:
-    pip install fastmcp fastapi httpx uvicorn
+    pip install fastmcp fastapi httpx
     mcp run server.py
 """
 
 import os
 import json
 import time
-from typing import Any
-from pathlib import Path
-
 import httpx
 from fastapi import FastAPI
 from fastmcp import FastMCP
 
-# ─────────────────────────────────────────────────────────────
-# ENV CONFIG (NEVER HARD-CODE SECRETS)
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# CONFIG (Use ENV Variables)
+# ─────────────────────────────────────────────
 
 ARIBA_BASE_URL = "https://api.ariba.com"
 ARIBA_TXN_BASE_URL = "https://openapi.ariba.com/api"
@@ -29,13 +26,23 @@ CLIENT_SECRET = os.getenv("ARIBA_CLIENT_SECRET")
 ARIBA_API_KEY = os.getenv("ARIBA_API_KEY")
 X_ARIBA_NETWORK_ID = os.getenv("ARIBA_NETWORK_ID")
 
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 # MCP APP
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 
 mcp = FastMCP(
     name="invoice-po-tax-analyzer",
-    instructions="Loads POs & Invoices from Ariba and compares tax discrepancies."
+    instructions="""
+This MCP server connects to SAP Ariba APIs.
+
+Workflow:
+1. Call load_pos_from_api to fetch Purchase Orders.
+2. Call load_invoices_from_api to fetch Invoices.
+3. Use compare_tax to compare a specific Invoice vs PO.
+4. Use batch_reconcile to reconcile all matching document numbers.
+
+Always load documents before comparing.
+"""
 )
 
 app = FastAPI()
@@ -44,185 +51,203 @@ app.mount("/", mcp.streamable_http_app())
 _token_cache = {"access_token": None, "expires_at": 0}
 _store = {"invoices": {}, "purchase_orders": {}}
 
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 # AUTH
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 
-def _get_access_token() -> str:
+def _get_access_token():
     if _token_cache["access_token"] and time.time() < _token_cache["expires_at"]:
         return _token_cache["access_token"]
 
-    url = f"{ARIBA_BASE_URL}/v2/oauth/token"
-
     response = httpx.post(
-        url,
+        f"{ARIBA_BASE_URL}/v2/oauth/token",
         data={"grant_type": "client_credentials", "realm": REALM},
         auth=(CLIENT_ID, CLIENT_SECRET),
         headers={"Content-Type": "application/x-www-form-urlencoded"}
     )
 
     if response.status_code != 200:
-        raise ValueError(f"Token fetch failed: {response.text}")
+        raise ValueError(f"Token error: {response.text}")
 
-    token_data = response.json()
-    _token_cache["access_token"] = token_data["access_token"]
-    _token_cache["expires_at"] = time.time() + token_data["expires_in"]
-    return token_data["access_token"]
+    data = response.json()
+    _token_cache["access_token"] = data["access_token"]
+    _token_cache["expires_at"] = time.time() + data["expires_in"]
+    return data["access_token"]
 
-def _ariba_headers():
+def _headers():
     return {
         "Authorization": f"Bearer {_get_access_token()}",
-        "Accept": "application/json",
         "apiKey": ARIBA_API_KEY,
-        "X-ARIBA-NETWORK-ID": X_ARIBA_NETWORK_ID
+        "X-ARIBA-NETWORK-ID": X_ARIBA_NETWORK_ID,
+        "Accept": "application/json"
     }
 
-# ─────────────────────────────────────────────────────────────
-# ARIBA FETCHERS
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# FETCH HELPERS
+# ─────────────────────────────────────────────
 
-def _build_date_filter(start: str, end: str):
+def _date_filter(start, end):
     return (
         f"and startDate eq '{start}' "
         f"and endDate eq '{end}'"
     )
 
-def _fetch_pos(start: str, end: str):
-    url = f"{ARIBA_TXN_BASE_URL}/purchase-orders/v1/prod/orders?{_build_date_filter(start,end)}&$top=100"
-    r = httpx.get(url, headers=_ariba_headers(), timeout=30)
+def _fetch(endpoint, start, end):
+    url = f"{ARIBA_TXN_BASE_URL}/{endpoint}?{_date_filter(start,end)}&$top=100"
+    r = httpx.get(url, headers=_headers(), timeout=30)
     if r.status_code != 200:
-        raise ValueError(f"PO fetch failed: {r.text}")
+        raise ValueError(r.text)
     return r.json().get("content", [])
 
-def _fetch_invoices(start: str, end: str):
-    url = f"{ARIBA_TXN_BASE_URL}/invoices/v1/prod/invoices?{_build_date_filter(start,end)}&$top=100"
-    r = httpx.get(url, headers=_ariba_headers(), timeout=30)
-    if r.status_code != 200:
-        raise ValueError(f"Invoice fetch failed: {r.text}")
-    return r.json().get("content", [])
-
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 # NORMALIZATION
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 
-def _normalize_po(po: dict):
-    amount = po.get("poAmount", {}).get("amount", 0)
+def _normalize_po(po):
+    amt = po.get("poAmount", {}).get("amount", 0)
     return {
         "documentNumber": po.get("documentNumber"),
         "taxAmount": 0,
         "taxRate": 0,
-        "taxableAmount": amount,
-        "totalAmount": amount,
-        "currency": po.get("poAmount", {}).get("currencyCode"),
+        "taxableAmount": amt,
+        "totalAmount": amt,
         "status": po.get("status")
     }
 
-def _normalize_invoice(inv: dict):
+def _normalize_invoice(inv):
     return {
         "documentNumber": inv.get("documentNumber"),
         "taxAmount": inv.get("taxAmount", 0),
         "taxRate": inv.get("taxRate", 0),
         "taxableAmount": inv.get("subTotalAmount", 0),
         "totalAmount": inv.get("invoiceAmount", {}).get("amount", 0),
-        "currency": inv.get("invoiceAmount", {}).get("currencyCode"),
         "status": inv.get("status")
     }
 
-# ─────────────────────────────────────────────────────────────
-# TAX COMPARISON ENGINE
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# COMPARISON ENGINE
+# ─────────────────────────────────────────────
 
-def _compare(inv: dict, po: dict):
-
+def _compare(inv, po):
     diffs = []
-    reasons = []
-
     if inv["taxRate"] != po["taxRate"]:
-        diffs.append({
-            "field": "taxRate",
-            "invoice": inv["taxRate"],
-            "po": po["taxRate"]
-        })
-        reasons.append("Tax rate mismatch.")
-
+        diffs.append({"field": "taxRate", "invoice": inv["taxRate"], "po": po["taxRate"]})
     if inv["taxAmount"] != po["taxAmount"]:
-        diffs.append({
-            "field": "taxAmount",
-            "invoice": inv["taxAmount"],
-            "po": po["taxAmount"]
-        })
-        reasons.append("Tax amount differs.")
-
+        diffs.append({"field": "taxAmount", "invoice": inv["taxAmount"], "po": po["taxAmount"]})
     if inv["taxableAmount"] != po["taxableAmount"]:
-        diffs.append({
-            "field": "taxableAmount",
-            "invoice": inv["taxableAmount"],
-            "po": po["taxableAmount"]
-        })
-        reasons.append("Taxable base differs.")
+        diffs.append({"field": "taxableAmount", "invoice": inv["taxableAmount"], "po": po["taxableAmount"]})
+    return {"hasDifferences": bool(diffs), "differences": diffs}
 
-    return {
-        "hasDifferences": len(diffs) > 0,
-        "differences": diffs,
-        "reasons": reasons
-    }
-
-# ─────────────────────────────────────────────────────────────
-# MCP TOOLS
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# MCP TOOLS WITH CLEAR PROMPTS
+# ─────────────────────────────────────────────
 
 @mcp.tool()
 def load_pos_from_api(start: str, end: str) -> str:
-    pos = _fetch_pos(start, end)
+    """
+    Fetch Purchase Orders from SAP Ariba within a date range.
+
+    Use this tool FIRST before performing comparisons.
+
+    Inputs:
+    - start: ISO date-time string (YYYY-MM-DDTHH:MM:SS)
+    - end:   ISO date-time string (YYYY-MM-DDTHH:MM:SS)
+      Maximum allowed range is 31 days.
+
+    This tool:
+    - Calls the Ariba Purchase Order API
+    - Normalizes the response
+    - Stores POs internally keyed by documentNumber
+
+    Returns:
+    - Number of POs loaded
+    """
+    pos = _fetch("purchase-orders/v1/prod/orders", start, end)
     for po in pos:
-        normalized = _normalize_po(po)
-        _store["purchase_orders"][normalized["documentNumber"]] = normalized
+        n = _normalize_po(po)
+        _store["purchase_orders"][n["documentNumber"]] = n
     return json.dumps({"loaded_pos": len(pos)})
 
 @mcp.tool()
 def load_invoices_from_api(start: str, end: str) -> str:
-    invoices = _fetch_invoices(start, end)
+    """
+    Fetch Invoices from SAP Ariba within a date range.
+
+    Use this AFTER loading POs if reconciliation is required.
+
+    Inputs:
+    - start: ISO date-time string
+    - end:   ISO date-time string
+
+    This tool:
+    - Calls the Ariba Invoice API
+    - Normalizes the response
+    - Stores invoices internally keyed by documentNumber
+
+    Returns:
+    - Number of invoices loaded
+    """
+    invoices = _fetch("invoices/v1/prod/invoices", start, end)
     for inv in invoices:
-        normalized = _normalize_invoice(inv)
-        _store["invoices"][normalized["documentNumber"]] = normalized
+        n = _normalize_invoice(inv)
+        _store["invoices"][n["documentNumber"]] = n
     return json.dumps({"loaded_invoices": len(invoices)})
 
 @mcp.tool()
 def compare_tax(invoice_id: str, po_id: str) -> str:
+    """
+    Compare tax details between a specific Invoice and Purchase Order.
+
+    Use this tool AFTER both documents have been loaded.
+
+    Inputs:
+    - invoice_id: documentNumber of the invoice
+    - po_id:      documentNumber of the purchase order
+
+    Returns:
+    - JSON diff showing tax discrepancies
+    """
     inv = _store["invoices"].get(invoice_id)
     po = _store["purchase_orders"].get(po_id)
-
     if not inv:
-        raise ValueError("Invoice not found")
+        raise ValueError("Invoice not loaded.")
     if not po:
-        raise ValueError("PO not found")
-
+        raise ValueError("PO not loaded.")
     return json.dumps(_compare(inv, po), indent=2)
 
 @mcp.tool()
 def batch_reconcile() -> str:
+    """
+    Automatically reconcile all loaded Purchase Orders against
+    Invoices with the same documentNumber.
+
+    Use this when performing bulk reconciliation.
+
+    Returns:
+    - List of comparison results for matching documents
+    """
     results = []
-
     for po_id, po in _store["purchase_orders"].items():
-        invoice = _store["invoices"].get(po_id)
-        if invoice:
+        inv = _store["invoices"].get(po_id)
+        if inv:
             results.append({
-                "document": po_id,
-                "comparison": _compare(invoice, po)
+                "documentNumber": po_id,
+                "comparison": _compare(inv, po)
             })
-
     return json.dumps(results, indent=2)
 
 @mcp.tool()
 def list_documents() -> str:
+    """
+    List all currently loaded Invoices and Purchase Orders.
+    Useful to check available document IDs before comparison.
+    """
     return json.dumps({
         "invoices": list(_store["invoices"].keys()),
         "purchase_orders": list(_store["purchase_orders"].keys())
     }, indent=2)
 
-# ─────────────────────────────────────────────────────────────
-# LOCAL TEST ENTRY
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 
 if __name__ == "__main__":
     print("Run using: mcp run server.py")
