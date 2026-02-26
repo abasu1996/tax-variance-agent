@@ -12,6 +12,10 @@ import time
 import httpx
 from fastapi import FastAPI
 from fastmcp import FastMCP
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("mcp-server")
 
 # ─────────────────────────────────────────────
 # CONFIG (Use ENV Variables)
@@ -163,6 +167,7 @@ def load_pos_from_api(start: str, end: str) -> str:
     - Number of POs loaded
     """
     pos = _fetch("purchase-orders/v1/prod/orders", start, end)
+    logger.info(f"Fetched {len(pos)} POs from API.")
     for po in pos:
         n = _normalize_po(po)
         _store["purchase_orders"][n["documentNumber"]] = n
