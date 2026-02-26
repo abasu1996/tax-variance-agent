@@ -83,7 +83,6 @@ def _ariba_headers():
 
 def _build_date_filter(start: str, end: str):
     return (
-        f"$filter=buyerANID eq '{X_ARIBA_NETWORK_ID}' "
         f"and startDate eq '{start}' "
         f"and endDate eq '{end}'"
     )
