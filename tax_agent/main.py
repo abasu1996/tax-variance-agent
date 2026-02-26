@@ -86,8 +86,11 @@ def _fetch_po_from_api() -> dict:
         "X-ARIBA-NETWORK-ID": X_ARIBA_NETWORK_ID
     }
 
-    url = f"{ARIBA_TXN_BASE_URL}/purchase-orders/v1/prod/orders?{_DATEFILTER}"
-    response = httpx.get(url, headers=headers, timeout=30)
+    # order_header_url = f"{ARIBA_TXN_BASE_URL}/purchase-orders/v1/prod/orders?{_DATEFILTER}"
+    # response = httpx.get(order_header_url, headers=headers, timeout=30)
+
+    order_item_url = f"{ARIBA_TXN_BASE_URL}/purchase-orders/v1/prod/items?{_DATEFILTER}"
+    response = httpx.get(order_item_url, headers=headers, timeout=30)
 
     if response.status_code != 200:
         raise ValueError(
@@ -349,7 +352,6 @@ def _compare_taxes(invoice_tax: dict, po_tax: dict) -> dict:
 def load_po_from_api() -> str:
     """
     Fetch Purchase Orders from an external Ariba Buyer network Purchase Order API and load it into the document store.
-    
     """
 
 
@@ -490,7 +492,13 @@ def list_documents() -> str:
         "invoices":        list(_store["invoices"].keys()),
         "purchase_orders": list(_store["purchase_orders"].keys()),
     }, indent=2)
-
+@mcp.tool()
+def log_message(level: str, message: str) -> str:
+    """Simple logging tool to log messages with different severity levels."""
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    log_entry = f"[{timestamp}] [{level.upper()}] {message}"
+    print(log_entry)
+    return log_entry
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MCP RESOURCES  (registered via @mcp.resource decorator)
@@ -514,6 +522,7 @@ def get_po_resource(doc_id: str) -> str:
     return json.dumps(doc, indent=2)
 
 
-  # exposes an HTTP endpoint instead of stdio
+ 
+
 
 
