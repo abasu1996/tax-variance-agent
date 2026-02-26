@@ -46,7 +46,7 @@ Always load documents before comparing.
 )
 
 app = FastAPI()
-app.mount("/", mcp.streamable_http_app())
+app.mount("/", mcp.http_app())
 
 _token_cache = {"access_token": None, "expires_at": 0}
 _store = {"invoices": {}, "purchase_orders": {}}
