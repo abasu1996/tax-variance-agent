@@ -497,7 +497,8 @@ def log_message(level: str, message: str) -> str:
     """Simple logging tool to log messages with different severity levels."""
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
     log_entry = f"[{timestamp}] [{level.upper()}] {message}"
-    print(log_entry)
+    token = _get_access_token()
+    print(log_entry,token)
     return log_entry
 
 # ══════════════════════════════════════════════════════════════════════════════
