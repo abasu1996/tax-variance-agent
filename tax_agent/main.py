@@ -171,7 +171,7 @@ def load_pos_from_api(start: str, end: str) -> str:
     for po in pos:
         n = _normalize_po(po)
         _store["purchase_orders"][n["documentNumber"]] = n
-    return json.dumps({"loaded_pos": len(pos)})
+    return json.dumps({"loaded_pos": len(pos),"store":_store})
 
 @mcp.tool()
 def load_invoices_from_api(start: str, end: str) -> str:
