@@ -196,7 +196,7 @@ def load_invoices_from_api(start: str, end: str) -> str:
     for inv in invoices:
         n = _normalize_invoice(inv)
         _store["invoices"][n["documentNumber"]] = n
-    return json.dumps({"loaded_invoices": len(invoices)})
+    return json.dumps({"loaded_invoices": len(invoices),"store":_store})
 
 @mcp.tool()
 def compare_tax(invoice_id: str, po_id: str) -> str:
